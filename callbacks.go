@@ -31,8 +31,10 @@ func (b *Bot) AddCallback(value string, c Callback) {
 // CallbackLoop reads from the ReadLoop channel and initiates a
 // callback check for every message it recieves.
 func (b *Bot) CallbackLoop() {
-	for b.run {
+	for {
 		select {
+		case <-b.stop:
+			return
 		case msg, ok := <-b.Data:
 			if ok {
 				b.messageCallback(msg)

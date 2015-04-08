@@ -24,7 +24,7 @@ type Bot struct {
 	writer       *irc.Encoder
 	conn         net.Conn
 	tries        float64
-	run          bool
+	stop         chan bool
 }
 
 func NewBot(f ...func(*Bot)) *Bot {
@@ -37,8 +37,9 @@ func NewBot(f ...func(*Bot)) *Bot {
 		Data:      make(chan *irc.Message),
 		callbacks: make(map[string][]Callback),
 		tries:     0,
-		run:       true,
+		stop:      make(chan bool),
 	}
+	b.stop <- false
 	for _, v := range f {
 		v(b)
 	}
@@ -126,7 +127,7 @@ func (b *Bot) Connect() error {
 // Reconnect checks to make sure we want to, and then attempts to
 // reconnect to the server
 func (b *Bot) Reconnect() {
-	if !b.run {
+	if <-b.stop {
 		close(b.Data)
 		return
 	}
@@ -146,7 +147,7 @@ func (b *Bot) Reconnect() {
 
 // Disconnect disconnects from the server
 func (b *Bot) Disconnect() {
-	b.run = false
+	b.stop <- true
 	log.Println("Disconnected from", b.Server)
 }
 
@@ -154,14 +155,19 @@ func (b *Bot) Disconnect() {
 // from the IRC server. If there is an error, it calls Reconnect
 func (b *Bot) ReadLoop() {
 	defer b.conn.Close()
-	for b.run {
-		b.conn.SetDeadline(time.Now().Add(300 * time.Second))
-		msg, err := b.reader.Decode()
-		if err != nil {
-			log.Println("Error:", err)
-			b.Reconnect()
-			return
+	for {
+		select {
+		case <-b.stop:
+			break
+		default:
+			b.conn.SetDeadline(time.Now().Add(300 * time.Second))
+			msg, err := b.reader.Decode()
+			if err != nil {
+				log.Println("Error:", err)
+				b.Reconnect()
+				return
+			}
+			b.Data <- msg
 		}
-		b.Data <- msg
 	}
 }
